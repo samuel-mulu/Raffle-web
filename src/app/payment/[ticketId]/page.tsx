@@ -43,13 +43,11 @@ export default function PaymentProofPage({
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  const { data: tickets, isLoading, error: queryError } = useQuery({
-    queryKey: ['my-tickets'],
-    queryFn: () => apiClient.get<MyTicket[]>('/me/tickets'),
+  const { data: ticket, isLoading, error: queryError } = useQuery({
+    queryKey: ['ticket', ticketId],
+    queryFn: () => apiClient.get<MyTicket>(`/tickets/${ticketId}`),
     enabled: !!user,
   });
-
-  const ticket = tickets?.find((item) => item.id === ticketId);
 
   const submitMutation = useMutation({
     mutationFn: () =>
@@ -125,7 +123,11 @@ export default function PaymentProofPage({
   return (
     <div className="bg-[#fcf8fa] min-h-screen pb-32">
       <header className="sticky top-0 bg-white border-b border-[#e2e8f0] px-4 py-3 flex items-center gap-4 z-50">
-        <button onClick={() => router.back()} className="p-1">
+        <button 
+          onClick={() => router.back()} 
+          className="p-1"
+          aria-label="Go back"
+        >
           <ArrowLeft className="w-6 h-6 text-[#0f172a]" />
         </button>
         <h1 className="text-xl font-bold text-[#0f172a]">Payment Proof</h1>
@@ -181,6 +183,7 @@ export default function PaymentProofPage({
               <button
                 onClick={() => copyToClipboard('889900')}
                 className="p-2 text-[#94a3b8] hover:text-[#1e3a8a]"
+                aria-label="Copy Telebirr Merchant Number"
               >
                 <Copy className="w-5 h-5" />
               </button>
@@ -200,6 +203,7 @@ export default function PaymentProofPage({
               <button
                 onClick={() => copyToClipboard('1000123456789')}
                 className="p-2 text-[#94a3b8] hover:text-[#1e3a8a]"
+                aria-label="Copy CBE Account Number"
               >
                 <Copy className="w-5 h-5" />
               </button>
