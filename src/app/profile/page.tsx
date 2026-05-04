@@ -51,7 +51,9 @@ export default function ProfilePage() {
         role: freshUser.role,
         name: freshUser.name,
         avatarUrl: freshUser.avatarUrl,
-        bio: freshUser.bio
+        bio: freshUser.bio,
+        roleLabel: freshUser.role === Role.ADMIN ? 'Admin' : freshUser.role === Role.CREATOR ? 'Creator' : 'Member',
+        landingPath: freshUser.role === Role.ADMIN ? '/admin/campaigns' : freshUser.role === Role.CREATOR ? '/creator' : '/buyer/campaigns'
       }
     : user;
 
