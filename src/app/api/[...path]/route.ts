@@ -49,9 +49,14 @@ async function forwardRequest(request: NextRequest, context: RouteContext) {
 
   const responseHeaders = new Headers();
   const responseContentType = response.headers.get('content-type');
+  const contentDisposition = response.headers.get('content-disposition');
 
   if (responseContentType) {
     responseHeaders.set('content-type', responseContentType);
+  }
+
+  if (contentDisposition) {
+    responseHeaders.set('content-disposition', contentDisposition);
   }
 
   return new Response(await response.arrayBuffer(), {

@@ -8,7 +8,8 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  responseType: 'json' | 'blob' = 'json'
 ): Promise<T> {
   const { accessToken, clearAuth } = useAuthStore.getState();
 
@@ -42,6 +43,10 @@ async function request<T>(
     return undefined as T;
   }
 
+  if (responseType === 'blob') {
+    return (await response.blob()) as T;
+  }
+
   const contentType = response.headers.get('content-type') || '';
 
   if (!contentType.includes('application/json')) {
@@ -51,8 +56,42 @@ async function request<T>(
   return response.json();
 }
 
+async function download(path: string) {
+  const { accessToken, clearAuth } = useAuthStore.getState();
+
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'GET',
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuth();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+
+    const error = await response
+      .json()
+      .catch(() => ({ message: 'Download failed' }));
+
+    throw new Error(error.message || 'Download failed');
+  }
+
+  const disposition = response.headers.get('content-disposition') || '';
+  const fileNameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+
+  return {
+    blob: await response.blob(),
+    fileName: fileNameMatch?.[1] || null,
+  };
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
+  getBlob: (path: string) =>
+    request<Blob>(path, { method: 'GET' }, 'blob'),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'POST',
@@ -64,4 +103,5 @@ export const apiClient = {
       body: body ? JSON.stringify(body) : undefined,
     }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  download,
 };

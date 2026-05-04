@@ -2,10 +2,13 @@
 
 import Link from 'next/link';
 import { Trophy } from 'lucide-react';
+import { getLandingPath } from '@/lib/role-ui';
 import { useAuthStore } from '@/stores/auth-store';
+import { Role } from '@/types/api';
 
 export default function WinnersHubPage() {
   const user = useAuthStore((state) => state.user);
+  const showWorkspaceLink = !!user && user.role !== Role.USER;
 
   return (
     <div className="min-h-screen bg-[#fcf8fa] px-4 py-10 pb-24">
@@ -26,18 +29,18 @@ export default function WinnersHubPage() {
 
         <div className="flex flex-col gap-3">
           <Link
-            href="/home"
+            href="/buyer/campaigns"
             className="inline-flex items-center justify-center rounded-2xl bg-black px-5 py-3 text-sm font-bold text-white"
           >
             Browse Campaigns
           </Link>
 
-          {user?.role === 'ADMIN' ? (
+          {showWorkspaceLink ? (
             <Link
-              href="/admin/campaigns"
+              href={getLandingPath(user)}
               className="text-sm font-bold text-[#1e3a8a]"
             >
-              Open Admin Campaigns
+              Open {user?.role === Role.ADMIN ? 'Admin Dashboard' : 'Creator Studio'}
             </Link>
           ) : null}
         </div>

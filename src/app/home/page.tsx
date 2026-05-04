@@ -1,5 +1,5 @@
-import { HomePage } from '@/components/home-page';
+import { redirect } from 'next/navigation';
 
 export default function HomeRoutePage() {
-  return <HomePage />;
+  redirect('/buyer/campaigns');
 }
