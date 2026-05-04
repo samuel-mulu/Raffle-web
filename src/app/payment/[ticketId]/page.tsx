@@ -11,11 +11,14 @@ import {
   Copy,
   Landmark,
   Wallet,
+  X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { TicketStatus } from '@/types/api';
 import { getErrorMessage } from '@/lib/errors';
+import { Modal } from '@/components/ui/modal';
+import { FormField } from '@/components/ui/form-field';
 
 interface MyTicket {
   id: string;
@@ -42,6 +45,8 @@ export default function PaymentProofPage({
   const [proofUrl, setProofUrl] = useState('');
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [copiedText, setCopiedText] = useState('');
 
   const { data: ticket, isLoading, error: queryError } = useQuery({
     queryKey: ['ticket', ticketId],
@@ -73,8 +78,10 @@ export default function PaymentProofPage({
     submitMutation.mutate();
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, label?: string) => {
     navigator.clipboard.writeText(text);
+    setCopiedText(label || text);
+    setTimeout(() => setCopiedText(''), 2000);
   };
 
   if (!hasHydrated || !user || isLoading) {
@@ -121,35 +128,46 @@ export default function PaymentProofPage({
   }
 
   return (
-    <div className="bg-[#fcf8fa] min-h-screen pb-32">
-      <header className="sticky top-0 bg-white border-b border-[#e2e8f0] px-4 py-3 flex items-center gap-4 z-50">
+    <div className="bg-[#0f172a] min-h-screen pb-32 text-white">
+      {/* Background blobs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-50">
+        <div className="absolute top-0 -left-[10%] w-[50%] h-[30%] bg-[#1e3a8a]/20 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[20%] -right-[10%] w-[40%] h-[40%] bg-[#f6d365]/10 blur-[100px] rounded-full" />
+      </div>
+
+      <header className="sticky top-0 z-50 bg-[#0f172a]/80 backdrop-blur-xl px-6 py-4 flex items-center gap-4 border-b border-white/5">
         <button 
           onClick={() => router.back()} 
-          className="p-1"
+          className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white border border-white/10 active:scale-90 transition-all"
           aria-label="Go back"
         >
-          <ArrowLeft className="w-6 h-6 text-[#0f172a]" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-xl font-bold text-[#0f172a]">Payment Proof</h1>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#f6d365]">
+            Payment Verification
+          </p>
+          <h1 className="text-2xl font-black text-white">Submit Proof</h1>
+        </div>
       </header>
 
-      <div className="p-4 space-y-6">
-        <div className="bg-white rounded-xl p-5 border border-[#e2e8f0] shadow-sm space-y-4">
+      <div className="px-6 py-6 relative z-10 space-y-6">
+        <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
           <div className="flex justify-between items-start">
             <div className="space-y-1">
-              <p className="text-xs font-bold text-[#94a3b8] uppercase tracking-wider">
+              <p className="text-xs font-black text-[#f6d365] uppercase tracking-wider">
                 Reserved Ticket
               </p>
-              <h2 className="text-2xl font-black text-[#1e3a8a]">
+              <h2 className="text-3xl font-black text-white">
                 #{ticket.ticketNumber}
               </h2>
-              <p className="font-bold text-[#0f172a]">{ticket.campaign.title}</p>
+              <p className="font-bold text-white/80">{ticket.campaign.title}</p>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold text-[#0f172a]">
+              <p className="text-3xl font-bold text-white">
                 {ticket.campaign.ticketPrice} ETB
               </p>
-              <div className="flex items-center gap-1 justify-end text-orange-600">
+              <div className="flex items-center gap-1 justify-end text-[#f6d365]">
                 <Clock className="w-3 h-3" />
                 <span className="text-[10px] font-bold uppercase">Reserved</span>
               </div>
@@ -157,108 +175,101 @@ export default function PaymentProofPage({
           </div>
 
           {ticket.reservedUntil ? (
-            <div className="bg-orange-50 p-3 rounded-lg flex items-center gap-3">
-              <Clock className="w-5 h-5 text-orange-600 shrink-0" />
-              <p className="text-xs text-orange-800 leading-tight">
-                Finish payment within 5 minutes or the reservation expires and
-                the number returns to the pool.
+            <div className="mt-4 rounded-[24px] bg-[#f6d365]/10 border border-[#f6d365]/20 p-4 flex items-center gap-3">
+              <Clock className="w-5 h-5 text-[#f6d365] shrink-0" />
+              <p className="text-sm text-white/80 leading-tight">
+                Finish payment within 5 minutes or the reservation expires and the number returns to the pool.
               </p>
             </div>
           ) : null}
         </div>
 
-        <div className="space-y-3">
-          <h3 className="font-bold text-[#0f172a] px-1">Payment Instructions</h3>
+        <div className="space-y-4">
+          <h3 className="font-black text-xl text-white px-1 flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-[#f6d365]" />
+            Payment Instructions
+          </h3>
           <div className="space-y-3">
-            <div className="bg-white p-4 rounded-xl border border-[#e2e8f0] flex items-center gap-4 group">
-              <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 flex items-center gap-4 group hover:bg-white/10 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-[#f6d365]/20 flex items-center justify-center text-[#f6d365] shrink-0">
                 <Wallet className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-[#94a3b8] uppercase tracking-tighter">
+                <p className="text-xs font-black text-[#f6d365] uppercase tracking-tighter">
                   Telebirr Merchant
                 </p>
-                <p className="font-bold text-[#0f172a]">889900</p>
+                <p className="font-black text-white">889900</p>
               </div>
               <button
-                onClick={() => copyToClipboard('889900')}
-                className="p-2 text-[#94a3b8] hover:text-[#1e3a8a]"
+                onClick={() => copyToClipboard('889900', 'Telebirr')}
+                className="p-3 text-white/40 hover:text-[#f6d365] hover:bg-white/10 rounded-xl transition-all"
                 aria-label="Copy Telebirr Merchant Number"
               >
-                <Copy className="w-5 h-5" />
+                {copiedText === 'Telebirr' ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
               </button>
             </div>
 
-            <div className="bg-white p-4 rounded-xl border border-[#e2e8f0] flex items-center gap-4 group">
-              <div className="w-12 h-12 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
+            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 flex items-center gap-4 group hover:bg-white/10 transition-all">
+              <div className="w-12 h-12 rounded-xl bg-[#f6d365]/20 flex items-center justify-center text-[#f6d365] shrink-0">
                 <Landmark className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-[#94a3b8] uppercase tracking-tighter">
+                <p className="text-xs font-black text-[#f6d365] uppercase tracking-tighter">
                   CBE (Commercial Bank)
                 </p>
-                <p className="font-bold text-[#0f172a]">1000123456789</p>
-                <p className="text-[10px] text-[#45464d]">Name: ETHIORaffle PLC</p>
+                <p className="font-black text-white">1000123456789</p>
+                <p className="text-[10px] text-white/50">Name: ETHIORaffle PLC</p>
               </div>
               <button
-                onClick={() => copyToClipboard('1000123456789')}
-                className="p-2 text-[#94a3b8] hover:text-[#1e3a8a]"
+                onClick={() => copyToClipboard('1000123456789', 'CBE')}
+                className="p-3 text-white/40 hover:text-[#f6d365] hover:bg-white/10 rounded-xl transition-all"
                 aria-label="Copy CBE Account Number"
               >
-                <Copy className="w-5 h-5" />
+                {copiedText === 'CBE' ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
               </button>
             </div>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-bold text-[#45464d] mb-1.5 ml-1">
-                Transaction ID / Ref Number
-              </label>
-              <input
-                type="text"
-                required
-                value={transactionId}
-                onChange={(event) => setTransactionId(event.target.value)}
-                placeholder="Example: TB23X9..."
-                className="w-full px-4 py-3 bg-white border border-[#e2e8f0] rounded-xl outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-[#45464d] mb-1.5 ml-1">
-                Proof Image URL (Mock)
-              </label>
-              <input
-                type="text"
-                required
-                value={proofUrl}
-                onChange={(event) => setProofUrl(event.target.value)}
-                placeholder="https://imgur.com/screenshot.png"
-                className="w-full px-4 py-3 bg-white border border-[#e2e8f0] rounded-xl outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all"
-              />
-              <p className="text-[10px] text-[#94a3b8] mt-2 ml-1">
-                * Upload to Imgur or similar and paste the link for now.
-              </p>
-            </div>
-          </div>
+          <FormField
+            label="Transaction ID / Ref Number"
+            id="transactionId"
+            required
+            value={transactionId}
+            onChange={setTransactionId}
+            placeholder="Example: TB23X9..."
+          />
+          
+          <FormField
+            label="Proof Image URL (Mock)"
+            id="proofUrl"
+            type="url"
+            required
+            value={proofUrl}
+            onChange={setProofUrl}
+            placeholder="https://imgur.com/screenshot.png"
+            hint="* Upload to Imgur or similar and paste the link for now."
+          />
 
           {error ? (
-            <p className="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg">
+            <div className="rounded-[24px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-400 font-bold flex justify-between items-center">
               {error}
-            </p>
+              <button onClick={() => setError('')}><X className="h-4 w-4" /></button>
+            </div>
           ) : null}
 
-          <div className="pt-4">
-            <button
-              type="submit"
-              disabled={submitMutation.isPending || !transactionId || !proofUrl}
-              className="w-full h-12 bg-black text-white font-bold rounded-xl shadow-lg disabled:bg-gray-400 active:scale-[0.98] transition-all"
-            >
-              {submitMutation.isPending ? 'Submitting...' : 'Submit Payment Proof'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={submitMutation.isPending || !transactionId || !proofUrl}
+            className="w-full h-14 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] font-black rounded-2xl flex items-center justify-center shadow-2xl shadow-orange-500/20 disabled:opacity-50 disabled:scale-100 active:scale-[0.98] transition-all mt-4"
+          >
+            {submitMutation.isPending ? (
+              <div className="w-5 h-5 border-2 border-[#0f172a] border-t-transparent rounded-full animate-spin" />
+            ) : (
+              'Submit Payment Proof'
+            )}
+          </button>
         </form>
       </div>
     </div>

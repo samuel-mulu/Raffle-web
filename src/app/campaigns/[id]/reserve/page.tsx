@@ -1,9 +1,9 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Search, Ticket } from 'lucide-react';
+import { ArrowLeft, Search, Ticket, X, Loader2, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { Campaign } from '@/types/api';
@@ -23,6 +23,7 @@ export default function TicketPickerPage({
   const [searchQuery, setSearchQuery] = useState('');
   const [currentRange, setCurrentRange] = useState(0);
   const [error, setError] = useState('');
+  const [timeLeft, setTimeLeft] = useState<number>(5 * 60); // 5 minutes in seconds
 
   const rangeSize = 100;
 
@@ -59,6 +60,27 @@ export default function TicketPickerPage({
 
   const takenNumbers = takenData?.takenNumbers || [];
 
+  // Countdown timer effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   const handleReserve = () => {
     if (!selectedNumber) {
       return;
@@ -92,35 +114,75 @@ export default function TicketPickerPage({
   );
 
   return (
-    <div className="bg-[#fcf8fa] min-h-screen pb-32">
-      <header className="sticky top-0 bg-white border-b border-[#e2e8f0] px-4 py-3 flex items-center gap-4 z-50">
-        <button onClick={() => router.back()} className="p-1">
-          <ArrowLeft className="w-6 h-6 text-[#0f172a]" />
+    <div className="bg-[#0f172a] min-h-screen pb-32 text-white">
+      {/* Background blobs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-50">
+        <div className="absolute top-0 -left-[10%] w-[50%] h-[30%] bg-[#1e3a8a]/20 blur-[120px] rounded-full" />
+        <div className="absolute bottom-[20%] -right-[10%] w-[40%] h-[40%] bg-[#f6d365]/10 blur-[100px] rounded-full" />
+      </div>
+
+      <header className="sticky top-0 z-50 bg-[#0f172a]/80 backdrop-blur-xl px-6 py-4 flex items-center gap-4 border-b border-white/5">
+        <button 
+          onClick={() => router.back()} 
+          className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white border border-white/10 active:scale-90 transition-all"
+          aria-label="Go back"
+        >
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-xl font-bold text-[#0f172a]">Choose Number</h1>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#f6d365]">
+            Ticket Selection
+          </p>
+          <h1 className="text-2xl font-black text-white">Choose Your Number</h1>
+        </div>
       </header>
 
-      <div className="p-4 space-y-6">
-        <div className="bg-white rounded-xl p-4 border border-[#e2e8f0] shadow-sm flex items-center gap-4">
-          <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden shrink-0">
-            {campaign.imageUrl ? (
-              <img
-                src={campaign.imageUrl}
-                alt={campaign.title}
-                className="w-full h-full object-cover"
-              />
-            ) : null}
+      <div className="px-6 py-6 relative z-10 space-y-6">
+        <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
+          <div className="flex gap-4">
+            <div className="w-20 h-20 rounded-[24px] bg-white/5 overflow-hidden shrink-0 border border-white/5">
+              {campaign.imageUrl ? (
+                <img
+                  src={campaign.imageUrl}
+                  alt={campaign.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : null}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-xl font-black text-white truncate">{campaign.title}</h2>
+              <p className="text-sm font-bold text-[#f6d365] mt-1">
+                {campaign.ticketPrice} ETB per ticket
+              </p>
+              <p className="text-xs text-white/50 mt-2">
+                Total: {campaign.totalTickets} tickets available
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="font-bold text-[#0f172a] truncate">{campaign.title}</h2>
-            <p className="text-sm text-[#1e3a8a] font-bold">
-              {campaign.ticketPrice} ETB / Ticket
-            </p>
+          
+          {/* Timer Display */}
+          <div className="mt-4 rounded-[24px] bg-[#f6d365]/10 border border-[#f6d365]/20 p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#f6d365]/20 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-[#f6d365]" />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-wider">
+                  Reservation Window
+                </p>
+                <p className="text-sm font-bold text-white">
+                  Complete payment within {formatTime(timeLeft)}
+                </p>
+              </div>
+            </div>
+            <div className={`text-lg font-black ${timeLeft < 60 ? 'text-rose-400' : 'text-white'}`}>
+              {formatTime(timeLeft)}
+            </div>
           </div>
         </div>
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#94a3b8]" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/30" />
           <input
             type="number"
             placeholder="Search specific number..."
@@ -136,7 +198,7 @@ export default function TicketPickerPage({
                 setCurrentRange(Math.floor((parsedValue - 1) / rangeSize));
               }
             }}
-            className="w-full pl-10 pr-4 py-3 bg-white border border-[#e2e8f0] rounded-xl outline-none focus:ring-2 focus:ring-[#1e3a8a] transition-all"
+            className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-[#f6d365]/20 focus:border-[#f6d365]/50 transition-all text-white placeholder-white/30"
           />
         </div>
 
@@ -145,10 +207,10 @@ export default function TicketPickerPage({
             <button
               key={`${range.start}-${range.end}`}
               onClick={() => setCurrentRange(index)}
-              className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs font-black whitespace-nowrap transition-all border ${
                 currentRange === index
-                  ? 'bg-[#1e3a8a] text-white'
-                  : 'bg-white border border-[#e2e8f0] text-[#45464d]'
+                  ? 'bg-[#f6d365] text-[#0f172a] border-transparent'
+                  : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'
               }`}
             >
               {range.start}-{range.end}
@@ -166,15 +228,15 @@ export default function TicketPickerPage({
                 key={num}
                 disabled={isTaken}
                 onClick={() => setSelectedNumber(num)}
-                className={`aspect-square flex flex-col items-center justify-center rounded-xl text-xs font-bold transition-all border ${
+                className={`aspect-square flex flex-col items-center justify-center rounded-xl text-xs font-black transition-all border ${
                   isSelected
-                    ? 'bg-[#1e3a8a] text-white border-transparent scale-95'
+                    ? 'bg-[#f6d365] text-[#0f172a] border-transparent scale-95 shadow-lg shadow-orange-500/20'
                     : isTaken
-                      ? 'bg-gray-100 text-gray-300 border-transparent cursor-not-allowed opacity-60'
-                      : 'bg-white text-[#0f172a] border-[#e2e8f0] hover:border-[#1e3a8a]'
+                      ? 'bg-white/5 text-white/20 border-white/10 cursor-not-allowed opacity-40'
+                      : 'bg-white/5 text-white border-white/10 hover:bg-white/10 hover:border-white/20'
                 }`}
               >
-                <span>{num}</span>
+                <span className="text-sm">{num}</span>
                 {isTaken ? (
                   <span className="text-[8px] uppercase tracking-tighter opacity-50">
                     Taken
@@ -186,30 +248,35 @@ export default function TicketPickerPage({
         </div>
 
         {error ? (
-          <p className="text-red-500 text-sm text-center font-medium bg-red-50 p-3 rounded-lg">
+          <div className="rounded-[24px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-400 font-bold flex justify-between items-center">
             {error}
-          </p>
+            <button onClick={() => setError('')}><X className="h-4 w-4" /></button>
+          </div>
         ) : null}
       </div>
 
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] p-4 bg-white border-t border-[#e2e8f0] shadow-[0_-4px_6px_rgba(0,0,0,0.05)] z-40">
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[430px] p-6 bg-[#0f172a]/90 backdrop-blur-2xl border-t border-white/5 shadow-[0_-4px_6px_rgba(0,0,0,0.3)] z-40">
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-2">
-            <Ticket className="w-5 h-5 text-[#94a3b8]" />
-            <span className="text-sm font-medium text-[#45464d]">
+            <Ticket className="w-5 h-5 text-[#f6d365]" />
+            <span className="text-sm font-medium text-white/60">
               {selectedNumber ? `Selected: #${selectedNumber}` : 'Select a number'}
             </span>
           </div>
-          <span className="text-lg font-bold text-[#0f172a]">
+          <span className="text-lg font-bold text-white">
             {selectedNumber ? `${campaign.ticketPrice} ETB` : '-'}
           </span>
         </div>
         <button
           onClick={handleReserve}
           disabled={!selectedNumber || reserveMutation.isPending}
-          className="w-full h-12 bg-black text-white font-bold rounded-xl flex items-center justify-center shadow-lg disabled:opacity-50 disabled:bg-gray-400 active:scale-[0.98] transition-all"
+          className="w-full h-14 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] font-black rounded-2xl flex items-center justify-center shadow-2xl shadow-orange-500/20 disabled:opacity-50 disabled:scale-100 active:scale-[0.98] transition-all"
         >
-          {reserveMutation.isPending ? 'Reserving...' : 'Reserve Ticket'}
+          {reserveMutation.isPending ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            'Reserve Ticket'
+          )}
         </button>
       </div>
     </div>
