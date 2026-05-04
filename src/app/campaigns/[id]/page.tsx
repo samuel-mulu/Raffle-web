@@ -57,7 +57,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
 
   const quickBuyMutation = useMutation({
     mutationFn: (ticketNumber: number) =>
-      apiClient.post<{ id: string }>(`/campaigns/${id}/reserve`, { ticketNumber }),
+      apiClient.post<{ id: string }>(`/campaigns/${id}/tickets/reserve`, { ticketNumber }),
     onSuccess: (data) => {
       setSuccess(true);
       queryClient.invalidateQueries({ queryKey: ['campaign-summary', id] });

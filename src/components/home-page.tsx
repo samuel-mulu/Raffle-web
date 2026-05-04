@@ -33,7 +33,7 @@ export function HomePage() {
 
   const quickBuyMutation = useMutation({
     mutationFn: ({ campaignId, ticketNumber }: { campaignId: string; ticketNumber: number }) =>
-      apiClient.post<{ id: string }>(`/campaigns/${campaignId}/reserve`, { ticketNumber }),
+      apiClient.post<{ id: string }>(`/campaigns/${campaignId}/tickets/reserve`, { ticketNumber }),
     onSuccess: (data) => {
       setBuySuccess(true);
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
