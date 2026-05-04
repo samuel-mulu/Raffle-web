@@ -40,9 +40,10 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
   const queryClient = useQueryClient();
   
   const [showQuickBuyModal, setShowQuickBuyModal] = useState(false);
-  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
+  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [showAvailableNumbers, setShowAvailableNumbers] = useState(false);
 
   const campaignQuery = useQuery({
     queryKey: ['campaign', id],
@@ -52,6 +53,12 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
   const summaryQuery = useQuery({
     queryKey: ['campaign-summary', id],
     queryFn: () => apiClient.get<TicketSummary>(`/campaigns/${id}/tickets/summary`),
+    enabled: !!campaignQuery.data,
+  });
+
+  const takenTicketsQuery = useQuery({
+    queryKey: ['taken-tickets', id],
+    queryFn: () => apiClient.get<{ campaignId: string; takenNumbers: number[] }>(`/campaigns/${id}/tickets/taken`),
     enabled: !!campaignQuery.data,
   });
 
@@ -331,6 +338,61 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
           </p>
         </div>
 
+        {/* Available Numbers Section */}
+        <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-[#f6d365] font-bold leading-relaxed uppercase tracking-widest">
+              Available Ticket Numbers
+            </p>
+            <button
+              onClick={() => setShowAvailableNumbers(!showAvailableNumbers)}
+              className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/10 text-xs font-black text-white hover:bg-white/20 transition-all"
+            >
+              {showAvailableNumbers ? 'Hide' : 'Show'} Available
+            </button>
+          </div>
+          
+          {showAvailableNumbers && campaign && (
+            <div className="space-y-3">
+              {takenTicketsQuery.isLoading ? (
+                <div className="text-center py-8 text-white/40 text-xs">
+                  Loading available numbers...
+                </div>
+              ) : takenTicketsQuery.error ? (
+                <div className="text-center py-8 text-rose-400 text-xs">
+                  Error loading available numbers
+                </div>
+              ) : (
+                <>
+                  <div className="max-h-60 overflow-y-auto rounded-xl bg-white/5 border border-white/10 p-4">
+                    <div className="grid grid-cols-8 gap-2">
+                      {Array.from({ length: campaign.totalTickets }, (_, i) => i + 1)
+                        .filter(num => !takenTicketsQuery.data?.takenNumbers?.includes(num))
+                        .map(num => (
+                          <button
+                            key={num}
+                            onClick={() => {
+                              setSelectedNumbers([num]);
+                              setShowQuickBuyModal(true);
+                            }}
+                            className="py-2 px-1 rounded-lg text-xs font-black bg-white/10 text-white hover:bg-[#f6d365] hover:text-[#0f172a] transition-all"
+                          >
+                            {num}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                  <p className="text-xs text-white/40 text-center">
+                    {takenTicketsQuery.data?.takenNumbers ? 
+                      `${campaign.totalTickets - takenTicketsQuery.data.takenNumbers.length} of ${campaign.totalTickets} numbers available` 
+                      : 'Loading...'}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 backdrop-blur-xl space-y-3">
           <p className="text-[11px] text-[#f6d365] font-bold leading-relaxed uppercase tracking-widest">
             Rules and Conditions
@@ -387,7 +449,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
         isOpen={showQuickBuyModal}
         onClose={() => {
           setShowQuickBuyModal(false);
-          setSelectedNumber(null);
+          setSelectedNumbers([]);
           setError('');
         }}
         title="Quick Purchase"
@@ -407,23 +469,91 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
           <div className="space-y-6">
             <div className="text-center py-4">
               <p className="text-white/60 mb-4">
-                Select a ticket number to reserve for 5 minutes
+                Select ticket numbers to reserve for 5 minutes each
               </p>
-              <div className="text-4xl font-black text-white mb-2">
-                #{selectedNumber || '?'}
+              <div className="text-2xl font-black text-white mb-2">
+                {selectedNumbers.length > 0 ? `#${selectedNumbers.join(', #')}` : '#?'}
               </div>
               <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-widest">
-                {campaign.ticketPrice} ETB
+                {selectedNumbers.length > 0 ? 
+                  `${selectedNumbers.length} × ${campaign.ticketPrice} = ${(selectedNumbers.length * campaign.ticketPrice).toLocaleString()} ETB` 
+                  : `${campaign.ticketPrice} ETB each`
+                }
               </p>
             </div>
 
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAvailableNumbers(!showAvailableNumbers)}
+                className="flex-1 py-2 bg-white/10 border border-white/10 text-white rounded-xl text-xs font-black hover:bg-white/20 transition-all"
+              >
+                {showAvailableNumbers ? 'Hide Available' : 'Show Available'} Numbers
+              </button>
+            </div>
+
+            {showAvailableNumbers && campaign && (
+              <div className="space-y-3">
+                <p className="text-xs text-white/60 font-medium">
+                  Available Numbers (Click to select multiple):
+                </p>
+                <div className="max-h-40 overflow-y-auto rounded-xl bg-white/5 border border-white/10 p-3">
+                  {takenTicketsQuery.isLoading ? (
+                    <div className="text-center py-4 text-white/40 text-xs">
+                      Loading available numbers...
+                    </div>
+                  ) : takenTicketsQuery.error ? (
+                    <div className="text-center py-4 text-rose-400 text-xs">
+                      Error loading available numbers
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-6 gap-2">
+                      {Array.from({ length: campaign.totalTickets }, (_, i) => i + 1)
+                        .filter(num => !takenTicketsQuery.data?.takenNumbers?.includes(num))
+                        .map(num => (
+                          <label
+                            key={num}
+                            className={`py-2 px-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center ${
+                              selectedNumbers.includes(num)
+                                ? 'bg-[#f6d365] text-[#0f172a]'
+                                : 'bg-white/10 text-white hover:bg-white/20'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedNumbers.includes(num)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedNumbers([...selectedNumbers, num]);
+                                } else {
+                                  setSelectedNumbers(selectedNumbers.filter(n => n !== num));
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            {num}
+                          </label>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-white/40">
+                  {takenTicketsQuery.data?.takenNumbers ? 
+                    `${campaign.totalTickets - takenTicketsQuery.data.takenNumbers.length} of ${campaign.totalTickets} numbers available` 
+                    : 'Loading...'}
+                </p>
+              </div>
+            )}
+
             <FormField
-              label="Choose Your Lucky Number"
-              id="ticketNumber"
-              type="number"
-              value={selectedNumber?.toString() || ''}
-              onChange={(value) => setSelectedNumber(value ? parseInt(value) : null)}
-              placeholder="Enter ticket number"
+              label="Or Enter Ticket Numbers Manually (comma separated)"
+              id="ticketNumbers"
+              type="text"
+              value={selectedNumbers.join(', ')}
+              onChange={(value) => {
+                const numbers = value.split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => !isNaN(n) && n > 0);
+                setSelectedNumbers(numbers);
+              }}
+              placeholder="e.g., 1, 5, 10"
               required
             />
 
@@ -443,10 +573,13 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
               </button>
               <button
                 onClick={() => {
-                  if (!selectedNumber) return;
-                  quickBuyMutation.mutate(selectedNumber);
+                  if (selectedNumbers.length === 0) return;
+                  // Reserve each ticket individually
+                  selectedNumbers.forEach(ticketNumber => {
+                    quickBuyMutation.mutate(ticketNumber);
+                  });
                 }}
-                disabled={!selectedNumber || quickBuyMutation.isPending}
+                disabled={selectedNumbers.length === 0 || quickBuyMutation.isPending}
                 className="flex-1 py-3 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] font-black rounded-2xl text-sm font-black hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
                 {quickBuyMutation.isPending ? (
@@ -455,7 +588,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                     Reserving...
                   </>
                 ) : (
-                  'Reserve & Pay'
+                  `Reserve ${selectedNumbers.length} Ticket${selectedNumbers.length > 1 ? 's' : ''} & Pay`
                 )}
               </button>
             </div>

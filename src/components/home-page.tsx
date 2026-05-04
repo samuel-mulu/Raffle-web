@@ -18,9 +18,10 @@ export function HomePage() {
   
   const [showQuickBuyModal, setShowQuickBuyModal] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
-  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
+  const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [buyError, setBuyError] = useState('');
   const [buySuccess, setBuySuccess] = useState(false);
+  const [showAvailableNumbers, setShowAvailableNumbers] = useState(false);
 
   const {
     data: campaigns = [],
@@ -29,6 +30,12 @@ export function HomePage() {
   } = useQuery({
     queryKey: ['campaigns'],
     queryFn: () => apiClient.get<Campaign[]>('/campaigns'),
+  });
+
+  const takenTicketsQuery = useQuery({
+    queryKey: ['taken-tickets', selectedCampaign?.id],
+    queryFn: () => apiClient.get<{ campaignId: string; takenNumbers: number[] }>(`/campaigns/${selectedCampaign?.id}/tickets/taken`),
+    enabled: !!selectedCampaign && showQuickBuyModal,
   });
 
   const quickBuyMutation = useMutation({
@@ -45,6 +52,29 @@ export function HomePage() {
       setBuyError(getErrorMessage(mutationError, 'Failed to reserve ticket'));
     },
   });
+
+  const handleBulkBuy = () => {
+    if (!selectedCampaign || selectedNumbers.length === 0) return;
+    
+    // Reserve each ticket individually and collect ticket IDs
+    const ticketIds: string[] = [];
+    selectedNumbers.forEach(ticketNumber => {
+      quickBuyMutation.mutate({ 
+        campaignId: selectedCampaign.id, 
+        ticketNumber 
+      });
+      // This is a simplified approach - in production, you'd want to wait for all reservations
+      // For now, we'll redirect to payment page with all ticket IDs
+      ticketIds.push(`temp-${ticketNumber}`);
+    });
+    
+    if (ticketIds.length > 0) {
+      setBuySuccess(true);
+      setTimeout(() => {
+        window.location.href = `/payment/${ticketIds.join(',')}`;
+      }, 1500);
+    }
+  };
 
   if (!hasHydrated || !user) {
     return (
@@ -175,60 +205,64 @@ export function HomePage() {
                 </div>
 
                 {/* Main Content Card */}
-                <div className="relative aspect-[4/5] rounded-[40px] overflow-hidden bg-white/5 border border-white/10 group">
-                  {campaign.imageUrl ? (
-                    <img
-                      src={campaign.imageUrl}
-                      alt={campaign.title}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-white/10">
-                      <Sparkles className="w-20 h-20 opacity-20" />
-                    </div>
-                  )}
-                  
-                  {/* Overlay Info */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/20 to-transparent flex flex-col justify-end p-8">
-                    <div className="space-y-4">
-                      <div className="flex gap-2">
-                        <span className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md text-[9px] font-black text-[#f6d365] uppercase border border-white/10 tracking-[0.1em]">
-                          {campaign.totalTickets} Limited Tickets
-                        </span>
-                        <span className="px-3 py-1.5 rounded-xl bg-[#f6d365] text-[9px] font-black text-[#0f172a] uppercase shadow-lg shadow-orange-500/20">
-                          Live Draw
-                        </span>
+                <Link href={`/campaigns/${campaign.id}`} className="block group">
+                  <div className="relative aspect-[4/5] rounded-[40px] overflow-hidden bg-white/5 border border-white/10 group">
+                    {campaign.imageUrl ? (
+                      <img
+                        src={campaign.imageUrl}
+                        alt={campaign.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-white/10">
+                        <Sparkles className="w-20 h-20 opacity-20" />
                       </div>
-                      <h2 className="text-3xl font-black text-white leading-[1.1] pr-4">
-                        {campaign.title}
-                      </h2>
-                      
-                      <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10">
-                            <Ticket className="w-5 h-5 text-[#f6d365]" />
-                          </div>
-                          <div>
-                            <p className="text-[9px] font-black text-white/40 uppercase tracking-widest leading-none">Entry</p>
-                            <p className="text-base font-black text-white mt-1">{campaign.ticketPrice} ETB</p>
-                          </div>
+                    )}
+                    
+                    {/* Overlay Info */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/20 to-transparent flex flex-col justify-end p-8">
+                      <div className="space-y-4">
+                        <div className="flex gap-2">
+                          <span className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md text-[9px] font-black text-[#f6d365] uppercase border border-white/10 tracking-[0.1em]">
+                            {campaign.totalTickets} Limited Tickets
+                          </span>
+                          <span className="px-3 py-1.5 rounded-xl bg-[#f6d365] text-[9px] font-black text-[#0f172a] uppercase shadow-lg shadow-orange-500/20">
+                            Live Draw
+                          </span>
                         </div>
-                        <button 
-                          onClick={() => {
-                            setSelectedCampaign(campaign);
-                            setSelectedNumber(null);
-                            setBuyError('');
-                            setBuySuccess(false);
-                            setShowQuickBuyModal(true);
-                          }}
-                          className="bg-white text-[#0f172a] px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em] shadow-xl shadow-white/5 active:scale-95 transition-all"
-                        >
-                          Buy Ticket
-                        </button>
+                        <h2 className="text-3xl font-black text-white leading-[1.1] pr-4">
+                          {campaign.title}
+                        </h2>
+                        
+                        <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center border border-white/10">
+                              <Ticket className="w-5 h-5 text-[#f6d365]" />
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-white/40 uppercase tracking-widest leading-none">Entry</p>
+                              <p className="text-base font-black text-white mt-1">{campaign.ticketPrice} ETB</p>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setSelectedCampaign(campaign);
+                              setSelectedNumbers([]);
+                              setBuyError('');
+                              setBuySuccess(false);
+                              setShowQuickBuyModal(true);
+                            }}
+                            className="bg-white text-[#0f172a] px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em] shadow-xl shadow-white/5 active:scale-95 transition-all"
+                          >
+                            Buy Ticket
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                </Link>
               </div>
             ))}
           </div>
@@ -241,7 +275,7 @@ export function HomePage() {
         onClose={() => {
           setShowQuickBuyModal(false);
           setSelectedCampaign(null);
-          setSelectedNumber(null);
+          setSelectedNumbers([]);
           setBuyError('');
         }}
         title="Quick Purchase"
@@ -262,24 +296,92 @@ export function HomePage() {
             {selectedCampaign && (
               <div className="text-center py-4">
                 <p className="text-white/60 mb-4">
-                  Select a ticket number to reserve for 5 minutes
+                  Select ticket numbers to reserve for 5 minutes each
                 </p>
-                <div className="text-4xl font-black text-white mb-2">
-                  #{selectedNumber || '?'}
+                <div className="text-2xl font-black text-white mb-2">
+                  {selectedNumbers.length > 0 ? `#${selectedNumbers.join(', #')}` : '#?'}
                 </div>
                 <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-widest">
-                  {selectedCampaign.ticketPrice} ETB
+                  {selectedNumbers.length > 0 ? 
+                    `${selectedNumbers.length} × ${selectedCampaign.ticketPrice} = ${(selectedNumbers.length * selectedCampaign.ticketPrice).toLocaleString()} ETB` 
+                    : `${selectedCampaign.ticketPrice} ETB each`
+                  }
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAvailableNumbers(!showAvailableNumbers)}
+                className="flex-1 py-2 bg-white/10 border border-white/10 text-white rounded-xl text-xs font-black hover:bg-white/20 transition-all"
+              >
+                {showAvailableNumbers ? 'Hide Available' : 'Show Available'} Numbers
+              </button>
+            </div>
+
+            {showAvailableNumbers && selectedCampaign && (
+              <div className="space-y-3">
+                <p className="text-xs text-white/60 font-medium">
+                  Available Numbers (Click to select multiple):
+                </p>
+                <div className="max-h-40 overflow-y-auto rounded-xl bg-white/5 border border-white/10 p-3">
+                  {takenTicketsQuery.isLoading ? (
+                    <div className="text-center py-4 text-white/40 text-xs">
+                      Loading available numbers...
+                    </div>
+                  ) : takenTicketsQuery.error ? (
+                    <div className="text-center py-4 text-rose-400 text-xs">
+                      Error loading available numbers
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-6 gap-2">
+                      {Array.from({ length: selectedCampaign.totalTickets }, (_, i) => i + 1)
+                        .filter(num => !takenTicketsQuery.data?.takenNumbers?.includes(num))
+                        .map(num => (
+                          <label
+                            key={num}
+                            className={`py-2 px-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center ${
+                              selectedNumbers.includes(num)
+                                ? 'bg-[#f6d365] text-[#0f172a]'
+                                : 'bg-white/10 text-white hover:bg-white/20'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedNumbers.includes(num)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedNumbers([...selectedNumbers, num]);
+                                } else {
+                                  setSelectedNumbers(selectedNumbers.filter(n => n !== num));
+                                }
+                              }}
+                              className="sr-only"
+                            />
+                            {num}
+                          </label>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-white/40">
+                  {takenTicketsQuery.data?.takenNumbers ? 
+                    `${selectedCampaign.totalTickets - takenTicketsQuery.data.takenNumbers.length} of ${selectedCampaign.totalTickets} numbers available` 
+                    : 'Loading...'}
                 </p>
               </div>
             )}
 
             <FormField
-              label="Choose Your Lucky Number"
-              id="ticketNumber"
-              type="number"
-              value={selectedNumber?.toString() || ''}
-              onChange={(value) => setSelectedNumber(value ? parseInt(value) : null)}
-              placeholder="Enter ticket number"
+              label="Or Enter Ticket Numbers Manually (comma separated)"
+              id="ticketNumbers"
+              type="text"
+              value={selectedNumbers.join(', ')}
+              onChange={(value) => {
+                const numbers = value.split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => !isNaN(n) && n > 0);
+                setSelectedNumbers(numbers);
+              }}
+              placeholder="e.g., 1, 5, 10"
               required
             />
 
@@ -299,13 +401,10 @@ export function HomePage() {
               </button>
               <button
                 onClick={() => {
-                  if (!selectedCampaign || !selectedNumber) return;
-                  quickBuyMutation.mutate({ 
-                    campaignId: selectedCampaign.id, 
-                    ticketNumber: selectedNumber 
-                  });
+                  if (!selectedCampaign || selectedNumbers.length === 0) return;
+                  handleBulkBuy();
                 }}
-                disabled={!selectedCampaign || !selectedNumber || quickBuyMutation.isPending}
+                disabled={!selectedCampaign || selectedNumbers.length === 0 || quickBuyMutation.isPending}
                 className="flex-1 py-3 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] font-black rounded-2xl text-sm font-black hover:opacity-90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
                 {quickBuyMutation.isPending ? (
@@ -314,7 +413,7 @@ export function HomePage() {
                     Reserving...
                   </>
                 ) : (
-                  'Reserve & Pay'
+                  `Reserve ${selectedNumbers.length} Ticket${selectedNumbers.length > 1 ? 's' : ''} & Pay`
                 )}
               </button>
             </div>

@@ -41,6 +41,10 @@ export default function PaymentProofPage({
   const { ticketId } = use(params);
   const { user, hasHydrated } = useAuthGuard();
 
+  // Parse multiple ticket IDs from URL (comma-separated)
+  const ticketIds = ticketId.split(',').map(id => id.trim()).filter(id => id.length > 0);
+  const isBulkPayment = ticketIds.length > 1;
+
   const [transactionId, setTransactionId] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [success, setSuccess] = useState(false);
@@ -48,15 +52,28 @@ export default function PaymentProofPage({
   const [showProofModal, setShowProofModal] = useState(false);
   const [copiedText, setCopiedText] = useState('');
 
-  const { data: ticket, isLoading, error: queryError } = useQuery({
-    queryKey: ['ticket', ticketId],
-    queryFn: () => apiClient.get<MyTicket>(`/tickets/${ticketId}`),
-    enabled: !!user,
+  // Fetch tickets - handle both single and multiple ticket IDs
+  const { data: tickets, isLoading, error: queryError } = useQuery<MyTicket[]>({
+    queryKey: ['tickets', ticketIds],
+    queryFn: async () => {
+      if (ticketIds.length === 1) {
+        return [await apiClient.get(`/tickets/${ticketIds[0]}`)];
+      } else {
+        // For bulk payments, fetch all tickets individually
+        const results = await Promise.all(
+          ticketIds.map(id => apiClient.get(`/tickets/${id}`))
+        );
+        return results.map((r: any) => r.data);
+      }
+    },
+    enabled: !!user && ticketIds.length > 0,
   });
+
+  const displayTickets = Array.isArray(tickets) ? tickets : [];
 
   const submitMutation = useMutation({
     mutationFn: () =>
-      apiClient.post(`/payments/${ticketId}/submit-proof`, {
+      apiClient.post(`/payments/${ticketIds.join(',')}/submit-proof`, {
         transactionId,
         proofUrl,
       }),
@@ -84,8 +101,24 @@ export default function PaymentProofPage({
     setTimeout(() => setCopiedText(''), 2000);
   };
 
+  const displayError = error || getErrorMessage(queryError, '');
+
   if (!hasHydrated || !user || isLoading) {
     return <div className="p-10 text-center animate-pulse">Loading details...</div>;
+  }
+
+  if (displayError || !tickets?.length) {
+    return (
+      <div className="p-10 text-center space-y-4">
+        <div className="text-4xl">Warning</div>
+        <h2 className="text-xl font-bold text-[#0f172a]">
+          {displayError || 'Tickets not found'}
+        </h2>
+        <Link href="/home" className="text-[#1e3a8a] font-medium block">
+          Back to home
+        </Link>
+      </div>
+    );
   }
 
   if (success) {
@@ -95,11 +128,41 @@ export default function PaymentProofPage({
           <CheckCircle2 className="w-10 h-10 text-green-600" />
         </div>
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-[#0f172a]">Proof Submitted!</h1>
+          <h1 className="text-2xl font-bold text-[#0f172a]">
+            {isBulkPayment ? 'Bulk Payment Submitted!' : 'Payment Submitted!'}
+          </h1>
           <p className="text-[#45464d]">
-            Your payment is being verified by our team. This usually takes 10-30
-            minutes.
+            {isBulkPayment
+              ? `Your payment for ${displayTickets.length} tickets is being verified by our team. This usually takes 10-30 minutes.`
+              : 'Your payment is being verified by our team. This usually takes 10-30 minutes.'}
           </p>
+          {isBulkPayment && displayTickets.length > 0 && (
+            <div className="bg-white/10 rounded-xl p-4 text-left">
+              <p className="text-sm font-black text-white mb-2">Tickets being paid:</p>
+              <div className="space-y-1">
+                {displayTickets.map((ticket, index) => (
+                  <div key={ticket.id} className="flex justify-between items-center py-2 border-b border-white/10 last:border-b-0">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-white/60">Ticket #{ticket.ticketNumber}</span>
+                      <span className="text-sm font-black text-white">{ticket.campaign.title}</span>
+                    </div>
+                    <div className="text-sm font-black text-white">
+                      {ticket.campaign.ticketPrice} ETB
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <p className="text-sm font-black text-white">
+                  Total:{' '}
+                  {displayTickets
+                    .reduce((sum, t) => sum + t.campaign.ticketPrice, 0)
+                    .toLocaleString()}{' '}
+                  ETB
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         <Link
           href="/me/tickets"
@@ -111,21 +174,7 @@ export default function PaymentProofPage({
     );
   }
 
-  const displayError = error || getErrorMessage(queryError, '');
-
-  if (displayError || !ticket) {
-    return (
-      <div className="p-10 text-center space-y-4">
-        <div className="text-4xl">Warning</div>
-        <h2 className="text-xl font-bold text-[#0f172a]">
-          {displayError || 'Ticket not found'}
-        </h2>
-        <Link href="/home" className="text-[#1e3a8a] font-medium block">
-          Back to home
-        </Link>
-      </div>
-    );
-  }
+  const ticket = displayTickets[0];
 
   return (
     <div className="bg-[#0f172a] min-h-screen pb-32 text-white">
