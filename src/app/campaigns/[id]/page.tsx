@@ -24,6 +24,9 @@ import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { getErrorMessage } from '@/lib/errors';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { LanguageToggle } from '@/components/language-toggle';
+import { getCampaignText, t } from '@/lib/i18n';
+import { useLanguageStore } from '@/stores/language-store';
 
 interface TicketSummary {
   campaignId: string;
@@ -37,6 +40,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
   const router = useRouter();
   const { id } = use(params);
   const { user, hasHydrated } = useAuthGuard();
+  const language = useLanguageStore((state) => state.language);
   const queryClient = useQueryClient();
   
   const [showQuickBuyModal, setShowQuickBuyModal] = useState(false);
@@ -80,7 +84,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
   if (!hasHydrated || !user) {
     return (
       <div className="bg-[#0f172a] min-h-screen flex items-center justify-center">
-        <div className="text-white/60">Loading...</div>
+        <div className="text-white/60">{t(language, 'loading')}</div>
       </div>
     );
   }
@@ -108,9 +112,11 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
     return (
       <div className="p-10 text-center space-y-4 flex flex-col items-center justify-center min-h-screen">
         <div className="text-6xl mb-4">?</div>
-        <h2 className="text-2xl font-black text-[#0f172a]">Raffle not found</h2>
+        <h2 className="text-2xl font-black text-[#0f172a]">
+          {t(language, 'raffleNotFound')}
+        </h2>
         <Link href="/buyer/campaigns" className="px-8 py-3 bg-[#1e3a8a] text-white font-black rounded-2xl shadow-lg">
-          Back to campaigns
+          {t(language, 'backToCampaigns')}
         </Link>
       </div>
     );
@@ -145,7 +151,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-700 bg-gray-100">
-            No Preview Available
+            {t(language, 'noPreview')}
           </div>
         )}
 
@@ -158,6 +164,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex gap-3">
+            <LanguageToggle />
             <button
               className="w-12 h-12 rounded-2xl bg-black/20 backdrop-blur-xl flex items-center justify-center text-white border border-white/10 active:scale-90 transition-all"
               aria-label="Like"
@@ -176,7 +183,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
         <div className="absolute bottom-6 right-6 z-20">
           <div className="bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] p-4 rounded-3xl shadow-2xl border-2 border-[#f6d365]/30 rotate-1">
             <p className="text-[10px] font-black uppercase tracking-widest opacity-80 leading-none">
-              Ticket Price
+              {t(language, 'ticketPrice')}
             </p>
             <p className="text-2xl font-black">{campaign.ticketPrice} ETB</p>
           </div>
@@ -199,7 +206,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
             </div>
             <div>
               <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-widest mb-0.5">
-                Verified Creator
+                {t(language, 'verifiedCreator')}
               </p>
               <h3 className="text-lg font-black text-white leading-none">
                 {campaign.creator?.name || 'EthioRaffle Official'}
@@ -223,16 +230,16 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                   : 'bg-green-500/20 text-green-300 border-green-500/30'
               }`}
             >
-              {isAlmostFull ? 'Almost Full' : 'Open Campaign'}
+              {isAlmostFull ? t(language, 'almostFull') : t(language, 'openCampaign')}
             </span>
             {campaign.drawAt ? (
               <span className="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-black uppercase tracking-widest">
-                Draw Date: {new Date(campaign.drawAt).toLocaleDateString()}
+                {t(language, 'drawDate')}: {new Date(campaign.drawAt).toLocaleDateString()}
               </span>
             ) : null}
           </div>
           <h1 className="text-4xl font-black text-white leading-[1.1] tracking-tight pr-4">
-            {campaign.title}
+            {getCampaignText(campaign, language).title}
           </h1>
         </div>
 
@@ -240,10 +247,10 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
           <div className="flex justify-between items-end">
             <div>
               <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-widest mb-1">
-                Raffle Progress
+                {t(language, 'raffleProgress')}
               </p>
               <h4 className="text-3xl font-black text-white">
-                {soldPercentage}% <span className="text-sm font-bold text-white/40">Filled</span>
+                {soldPercentage}% <span className="text-sm font-bold text-white/40">{t(language, 'filled')}</span>
               </h4>
             </div>
             <div className="text-right">
@@ -251,7 +258,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
                 {summary?.remaining || 0}
               </p>
               <p className="text-[10px] font-bold text-white/40 uppercase tracking-tighter mt-1">
-                Tickets Left
+                {t(language, 'ticketsLeft')}
               </p>
             </div>
           </div>
@@ -279,10 +286,13 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
             <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center">
               <Info className="w-4 h-4 text-blue-300" />
             </div>
-            <h3 className="font-black text-xl text-white">About Prize</h3>
+            <h3 className="font-black text-xl text-white">
+              {t(language, 'aboutPrize')}
+            </h3>
           </div>
           <p className="text-white/60 text-base leading-relaxed whitespace-pre-line font-medium">
-            {campaign.description || 'No description provided for this raffle yet.'}
+            {getCampaignText(campaign, language).description ||
+              'No description provided for this raffle yet.'}
           </p>
         </div>
 
@@ -418,7 +428,7 @@ export default function CampaignDetailPage({ params }: { params: Promise<{ id: s
               onClick={() => setShowQuickBuyModal(true)}
               className="flex-1 h-14 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] font-black rounded-2xl flex items-center justify-center shadow-2xl shadow-orange-500/20 hover:opacity-90 active:scale-[0.98] transition-all text-lg tracking-tight"
             >
-              Buy Ticket
+              {t(language, 'buyTicket')}
             </button>
             <Link
               href={`/campaigns/${id}/reserve`}

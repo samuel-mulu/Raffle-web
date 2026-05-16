@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/auth-store';
+import { AuthResponse } from '@/types/api';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -6,15 +7,53 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-  responseType: 'json' | 'blob' = 'json'
-): Promise<T> {
-  const { accessToken, clearAuth } = useAuthStore.getState();
+function redirectToLogin() {
+  if (typeof window !== 'undefined') {
+    window.location.href = '/login';
+  }
+}
 
+async function parseApiError(response: Response, fallback: string) {
+  const error = await response.json().catch(() => ({ message: fallback }));
+  return new Error(error.message || fallback);
+}
+
+async function refreshAccessToken() {
+  const { refreshToken, user, setAuth, clearAuth } = useAuthStore.getState();
+
+  if (!refreshToken || !user?.id) {
+    clearAuth();
+    return null;
+  }
+
+  const response = await fetch(`${API_URL}/auth/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      userId: user.id,
+      refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    clearAuth();
+    return null;
+  }
+
+  const data = (await response.json()) as AuthResponse;
+  setAuth(data.accessToken, data.refreshToken, data.user);
+  return data.accessToken;
+}
+
+async function fetchWithAuthRetry(
+  path: string,
+  options: RequestInit,
+  retryOnUnauthorized = true,
+) {
+  const { accessToken, clearAuth } = useAuthStore.getState();
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
     ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     ...options.headers,
   };
@@ -24,19 +63,49 @@ async function request<T>(
     headers,
   });
 
+  if (response.status !== 401 || !retryOnUnauthorized) {
+    return response;
+  }
+
+  const nextAccessToken = await refreshAccessToken();
+
+  if (!nextAccessToken) {
+    clearAuth();
+    redirectToLogin();
+    return response;
+  }
+
+  return fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      ...headers,
+      Authorization: `Bearer ${nextAccessToken}`,
+    },
+  });
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  responseType: 'json' | 'blob' = 'json'
+): Promise<T> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  const response = await fetchWithAuthRetry(path, {
+    ...options,
+    headers,
+  });
+
   if (!response.ok) {
     if (response.status === 401) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
+      useAuthStore.getState().clearAuth();
+      redirectToLogin();
     }
 
-    const error = await response
-      .json()
-      .catch(() => ({ message: 'An error occurred' }));
-
-    throw new Error(error.message || 'API request failed');
+    throw await parseApiError(response, 'API request failed');
   }
 
   if (response.status === 204) {
@@ -57,26 +126,17 @@ async function request<T>(
 }
 
 async function download(path: string) {
-  const { accessToken, clearAuth } = useAuthStore.getState();
-
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetchWithAuthRetry(path, {
     method: 'GET',
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
+      useAuthStore.getState().clearAuth();
+      redirectToLogin();
     }
 
-    const error = await response
-      .json()
-      .catch(() => ({ message: 'Download failed' }));
-
-    throw new Error(error.message || 'Download failed');
+    throw await parseApiError(response, 'Download failed');
   }
 
   const disposition = response.headers.get('content-disposition') || '';
@@ -104,4 +164,27 @@ export const apiClient = {
     }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   download,
+  postMultipart: async <T>(path: string, formData: FormData) => {
+    const response = await fetchWithAuthRetry(path, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        useAuthStore.getState().clearAuth();
+        redirectToLogin();
+      }
+
+      throw await parseApiError(response, 'API request failed');
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      throw new Error(getErrorMessage(null, 'Unexpected API response'));
+    }
+
+    return response.json() as Promise<T>;
+  },
 };

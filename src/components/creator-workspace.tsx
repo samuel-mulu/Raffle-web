@@ -1,21 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CheckCircle2,
-  Clock3,
-  Download,
-  ExternalLink,
-  FileText,
-  Link2,
   Loader2,
   Plus,
   Sparkles,
-  Ticket,
   Tv,
-  Users,
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -25,18 +17,47 @@ import {
   Campaign,
   CampaignBuyerListResponse,
   CampaignStats,
-  CampaignStatus,
+  ImportPreviewResponse,
   Role,
+  TicketStatus,
 } from '@/types/api';
+import { CampaignsTab } from '@/components/creator/campaigns-tab';
+import { ExportsTab } from '@/components/creator/exports-tab';
+import { OverviewTab } from '@/components/creator/overview-tab';
+import { SalesTab } from '@/components/creator/sales-tab';
+import { BuyerScope, CreatorWorkspaceTab } from '@/components/creator/types';
 
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 
-type CreatorWorkspaceTab = 'overview' | 'campaigns' | 'sales' | 'exports';
-
 type CreatorWorkspaceProps = {
   activeTab: CreatorWorkspaceTab;
 };
+
+const BUYER_PAGE_SIZE = 25;
+
+const CREATOR_LAST_CAMPAIGN_KEY = 'rafil-creator-last-campaign';
+
+function buildBuyerListPath(
+  campaignId: string,
+  opts: { page: number; pageSize: number; scope: BuyerScope; search: string },
+) {
+  const q = new URLSearchParams({
+    page: String(opts.page),
+    pageSize: String(opts.pageSize),
+  });
+  if (opts.search) {
+    q.set('search', opts.search);
+  }
+  if (opts.scope === 'approved') {
+    q.set('approvedOnly', 'true');
+  } else if (opts.scope === 'payment_pending') {
+    q.set('ticketStatus', TicketStatus.PAYMENT_PENDING);
+  } else if (opts.scope === 'reserved') {
+    q.set('ticketStatus', TicketStatus.RESERVED);
+  }
+  return `/creator/campaigns/${campaignId}/buyers?${q}`;
+}
 
 const tabItems: Array<{ label: string; href: string; value: CreatorWorkspaceTab }> = [
   { label: 'Overview', href: '/creator/overview', value: 'overview' },
@@ -56,7 +77,15 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
     facebook?: string;
   } | null>(null);
   const [error, setError] = useState('');
-  
+
+  const [buyerScope, setBuyerScope] = useState<BuyerScope>('approved');
+  const [buyerPage, setBuyerPage] = useState(1);
+  const [buyerSearchInput, setBuyerSearchInput] = useState('');
+  const [debouncedBuyerSearch, setDebouncedBuyerSearch] = useState('');
+  const [spreadsheetPreview, setSpreadsheetPreview] =
+    useState<ImportPreviewResponse | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
   const [createFormData, setCreateFormData] = useState({
     title: '',
     description: '',
@@ -66,19 +95,80 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
     drawAt: '',
   });
 
+  const persistCampaignSelection = useCallback((campaignId: string) => {
+    try {
+      sessionStorage.setItem(CREATOR_LAST_CAMPAIGN_KEY, campaignId);
+    } catch {
+      //
+    }
+    setSelectedCampaignId(campaignId);
+  }, []);
+
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ['creator-campaigns'],
     queryFn: () => apiClient.get<Campaign[]>('/creator/campaigns'),
     enabled: !!user && user.role === Role.CREATOR,
   });
 
-  // ... (rest of the logic remains the same)
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedBuyerSearch(buyerSearchInput.trim()),
+      380,
+    );
+    return () => window.clearTimeout(timer);
+  }, [buyerSearchInput]);
 
   useEffect(() => {
-    if (!selectedCampaignId && campaigns.length > 0) {
-      setSelectedCampaignId(campaigns[0].id);
+    if (!campaigns.length) {
+      return;
     }
-  }, [campaigns, selectedCampaignId]);
+
+    const fromUrl =
+      activeTab === 'sales'
+        ? new URLSearchParams(window.location.search).get('campaignId')
+        : null;
+
+    if (fromUrl && campaigns.some((c) => c.id === fromUrl)) {
+      persistCampaignSelection(fromUrl);
+      return;
+    }
+
+    setSelectedCampaignId((current) => {
+      if (current && campaigns.some((c) => c.id === current)) {
+        return current;
+      }
+
+      const storedRaw =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem(CREATOR_LAST_CAMPAIGN_KEY)
+          : null;
+
+      const fallback =
+        storedRaw && campaigns.some((c) => c.id === storedRaw)
+          ? storedRaw
+          : campaigns[0].id;
+
+      try {
+        sessionStorage.setItem(CREATOR_LAST_CAMPAIGN_KEY, fallback);
+      } catch {
+        //
+      }
+
+      return fallback;
+    });
+  }, [campaigns, activeTab, persistCampaignSelection]);
+
+  useEffect(() => {
+    setBuyerPage(1);
+    setBuyerScope('approved');
+    setBuyerSearchInput('');
+    setDebouncedBuyerSearch('');
+    setSpreadsheetPreview(null);
+  }, [selectedCampaignId]);
+
+  useEffect(() => {
+    setBuyerPage(1);
+  }, [buyerScope, debouncedBuyerSearch]);
 
   const selectedCampaign =
     campaigns.find((campaign) => campaign.id === selectedCampaignId) || null;
@@ -93,12 +183,56 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
   });
 
   const buyersQuery = useQuery({
-    queryKey: ['creator-campaign-buyers', selectedCampaignId],
+    queryKey: [
+      'creator-campaign-buyers',
+      selectedCampaignId,
+      buyerPage,
+      buyerScope,
+      debouncedBuyerSearch,
+    ],
     queryFn: () =>
       apiClient.get<CampaignBuyerListResponse>(
-        `/creator/campaigns/${selectedCampaignId}/buyers?page=1&pageSize=25`,
+        buildBuyerListPath(selectedCampaignId!, {
+          page: buyerPage,
+          pageSize: BUYER_PAGE_SIZE,
+          scope: buyerScope,
+          search: debouncedBuyerSearch,
+        }),
       ),
-    enabled: !!selectedCampaignId,
+    enabled: !!selectedCampaignId && activeTab === 'sales',
+  });
+
+  const overviewApprovedBuyersQuery = useQuery({
+    queryKey: ['creator-overview-buyers', selectedCampaignId],
+    queryFn: () =>
+      apiClient.get<CampaignBuyerListResponse>(
+        buildBuyerListPath(selectedCampaignId!, {
+          page: 1,
+          pageSize: 12,
+          scope: 'approved',
+          search: '',
+        }),
+      ),
+    enabled: !!selectedCampaignId && activeTab === 'overview',
+  });
+
+  const importPreviewMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return apiClient.postMultipart<ImportPreviewResponse>(
+        `/creator/campaigns/${selectedCampaignId}/import-preview`,
+        formData,
+      );
+    },
+    onSuccess: (data) => {
+      setSpreadsheetPreview(data);
+      setError('');
+    },
+    onError: (mutationError: unknown) => {
+      setError(getErrorMessage(mutationError, 'Could not parse file'));
+      setSpreadsheetPreview(null);
+    },
   });
 
   const createMutation = useMutation({
@@ -179,6 +313,44 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
     ];
   }, [statsQuery.data]);
 
+  const buyerTotalPages = useMemo(() => {
+    const total = buyersQuery.data?.total ?? 0;
+    return Math.max(1, Math.ceil(total / BUYER_PAGE_SIZE));
+  }, [buyersQuery.data?.total]);
+
+  const emptyBuyerCaption = useMemo(() => {
+    switch (buyerScope) {
+      case 'approved':
+        return 'No verified (paid or winner) buyers match this filter yet.';
+      case 'payment_pending':
+        return 'Nobody is waiting with a proof upload for this raffle.';
+      case 'reserved':
+        return 'Tickets are moving fast — nobody is holding an unpaid reservation right now.';
+      default:
+        return 'No buyer tickets match this filter yet.';
+    }
+  }, [buyerScope]);
+
+  const downloadBuyerImportTemplateCsv = () => {
+    const blob = new Blob(['Buyer Name,Buyer Phone,Ticket Number\n'], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'buyer-import-template.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetBuyerWorkspace = () => {
+    setBuyerScope('approved');
+    setBuyerPage(1);
+    setBuyerSearchInput('');
+    setDebouncedBuyerSearch('');
+    setSpreadsheetPreview(null);
+  };
+
   const handleDownload = async (format: 'xlsx' | 'pdf') => {
     if (!selectedCampaignId) {
       return;
@@ -204,10 +376,10 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
 
   if (!hasHydrated || !user || isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="app-page flex min-h-screen items-center justify-center">
         <div className="text-center">
           <Loader2 className="mx-auto h-10 w-10 animate-spin text-[#1e3a8a]" />
-          <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-[#94a3b8]">
+          <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] app-muted">
             Loading creator workspace
           </p>
         </div>
@@ -216,39 +388,39 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] pb-28 text-white">
+    <div className="creator-theme app-page min-h-screen pb-24 text-[var(--foreground)] transition-colors">
       {/* Background blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-50">
         <div className="absolute top-0 -left-[10%] w-[50%] h-[30%] bg-[#1e3a8a]/20 blur-[120px] rounded-full" />
         <div className="absolute bottom-[20%] -right-[10%] w-[40%] h-[40%] bg-[#f6d365]/10 blur-[100px] rounded-full" />
       </div>
 
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#0f172a]/80 px-6 py-5 backdrop-blur-2xl">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f6d365] text-[#0f172a] shadow-lg shadow-orange-500/10">
-              <Tv className="h-5 w-5" />
+      <header className="sticky top-0 z-40 border-b border-[var(--card-border)] bg-[var(--page-surface)]/85 px-5 py-3 backdrop-blur-2xl">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent)] text-[var(--accent-foreground)] shadow-lg shadow-orange-500/10">
+              <Tv className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#f6d365]">
+              <p className="text-[9px] font-black uppercase tracking-[0.24em] app-accent">
                 Creator Studio
               </p>
-              <h1 className="text-2xl font-black tracking-tight text-white">
+              <h1 className="text-xl font-black tracking-tight text-[var(--foreground)]">
                 {user.name || 'Creator workspace'}
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right shadow-sm">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/30">
+            <div className="rounded-2xl border border-[var(--card-border)] bg-[var(--card)] px-3 py-2 text-right shadow-sm">
+              <p className="text-[9px] font-black uppercase tracking-[0.18em] app-muted">
                 Active phone
               </p>
-              <p className="text-sm font-bold text-white">{user.phone}</p>
+              <p className="text-xs font-bold text-[var(--foreground)]">{user.phone}</p>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#f6d365] px-5 text-sm font-black uppercase tracking-[0.16em] text-[#0f172a] shadow-lg shadow-orange-500/10 transition-all hover:scale-105 active:scale-95"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 text-xs font-black uppercase tracking-[0.16em] text-[var(--accent-foreground)] shadow-lg shadow-orange-500/10 transition-all hover:scale-105 active:scale-95"
             >
               <Plus className="h-4 w-4" />
               New Drop
@@ -256,15 +428,15 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           {tabItems.map((tab) => (
             <Link
               key={tab.value}
               href={tab.href}
-              className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-all ${
+              className={`rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] transition-all ${
                 activeTab === tab.value
-                  ? 'bg-[#f6d365] text-[#0f172a] shadow-lg'
-                  : 'bg-white/5 text-white/40 hover:bg-white/10'
+                  ? 'bg-[var(--accent)] text-[var(--accent-foreground)] shadow-lg'
+                  : 'bg-[var(--card)] app-muted hover:bg-[var(--panel-strong)]'
               }`}
             >
               {tab.label}
@@ -273,7 +445,7 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
         </div>
       </header>
 
-      <div className="px-6 py-6 relative z-10">
+      <div className="px-5 py-4 relative z-10">
         {error ? (
           <div className="mb-5 rounded-[24px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-400 font-bold flex justify-between items-center">
             {error}
@@ -282,14 +454,14 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
         ) : null}
 
         {campaigns.length === 0 ? (
-          <div className="rounded-[40px] border border-dashed border-white/10 bg-white/5 p-10 text-center shadow-sm backdrop-blur-xl">
-            <div className="mx-auto flex h-18 w-18 items-center justify-center rounded-[28px] bg-white/5 text-[#f6d365]">
+          <div className="rounded-[32px] border border-dashed border-[var(--card-border)] bg-[var(--card)] p-8 text-center shadow-sm backdrop-blur-xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-[var(--panel-strong)] app-accent">
               <Sparkles className="h-8 w-8" />
             </div>
-            <h2 className="mt-6 text-2xl font-black text-white">
+            <h2 className="mt-5 text-xl font-black text-[var(--foreground)]">
               Start your first approved raffle
             </h2>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-7 text-white/40 font-medium">
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 app-muted font-medium">
               Create a draft, add the prize details, and submit it for admin review when you are ready to launch.
             </p>
             <button
@@ -306,7 +478,7 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
               {campaigns.map((campaign) => (
                 <button
                   key={campaign.id}
-                  onClick={() => setSelectedCampaignId(campaign.id)}
+                  onClick={() => persistCampaignSelection(campaign.id)}
                   className={`rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] transition-all border ${
                     campaign.id === selectedCampaignId
                       ? 'bg-[#1e3a8a] text-white border-blue-500/30 shadow-lg shadow-blue-500/10'
@@ -319,316 +491,68 @@ export function CreatorWorkspace({ activeTab }: CreatorWorkspaceProps) {
             </div>
 
             {activeTab === 'overview' ? (
-              <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="space-y-6">
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    {summaryCards.map((card) => (
-                      <div
-                        key={card.label}
-                        className="rounded-[28px] border border-white/10 bg-white/5 p-5 shadow-xl backdrop-blur-xl"
-                      >
-                        <div
-                          className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-[0.16em] ${card.tone}`}
-                        >
-                          {card.label}
-                        </div>
-                        <p className="mt-4 text-3xl font-black tracking-tight text-white">
-                          {card.value}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {selectedCampaign ? (
-                    <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-                      <div className="flex flex-col gap-6 lg:flex-row">
-                        <div className="h-40 w-full overflow-hidden rounded-[28px] bg-white/5 lg:w-64 border border-white/5 shadow-inner">
-                          {selectedCampaign.imageUrl ? (
-                            <img
-                              src={selectedCampaign.imageUrl}
-                              alt={selectedCampaign.title}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-full items-center justify-center text-white/10">
-                              <Ticket className="h-10 w-10" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-[#f6d365]">
-                              {selectedCampaign.status}
-                            </span>
-                            <span className="rounded-xl bg-[#f6d365] px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-[#0f172a]">
-                              {selectedCampaign.ticketPrice} ETB
-                            </span>
-                          </div>
-                          <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
-                            {selectedCampaign.title}
-                          </h2>
-                          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/40 font-medium">
-                            {selectedCampaign.description ||
-                              'Add a description to help buyers understand the prize, rules, and livestream details.'}
-                          </p>
-                          <div className="mt-6 flex flex-wrap gap-3">
-                            <button
-                              onClick={() =>
-                                setShowLinkModal({
-                                  id: selectedCampaign.id,
-                                  youtube: selectedCampaign.liveLinks?.youtube,
-                                  facebook: selectedCampaign.liveLinks?.facebook,
-                                })
-                              }
-                              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white hover:bg-white/10 transition-all active:scale-95"
-                            >
-                              <Link2 className="h-4 w-4 text-[#f6d365]" />
-                              Broadcast links
-                            </button>
-                            <Link
-                              href={`/campaigns/${selectedCampaign.id}`}
-                              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white hover:bg-white/10 transition-all active:scale-95"
-                            >
-                              <ExternalLink className="h-4 w-4 text-[#f6d365]" />
-                              Public page
-                            </Link>
-                            {(selectedCampaign.status === CampaignStatus.DRAFT ||
-                              selectedCampaign.status === CampaignStatus.REJECTED) && (
-                              <button
-                                onClick={() => submitMutation.mutate(selectedCampaign.id)}
-                                className="inline-flex items-center gap-2 rounded-2xl bg-[#f6d365] px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f172a] shadow-lg shadow-orange-500/20 active:scale-95 transition-all"
-                              >
-                                <CheckCircle2 className="h-4 w-4" />
-                                Submit review
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#f6d365]">
-                    Approval workflow
-                  </p>
-                  <div className="mt-6 space-y-4">
-                    {[
-                      'Create or revise your draft campaign.',
-                      'Submit the campaign for admin review.',
-                      'Wait for activation before buyer reservations begin.',
-                      'Track activity and export reports.',
-                    ].map((step, index) => (
-                      <div key={step} className="flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-xs font-black text-[#f6d365]">
-                          {index + 1}
-                        </div>
-                        <p className="pt-2 text-sm text-white/50 font-medium leading-relaxed">{step}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+              <OverviewTab
+                summaryCards={summaryCards}
+                selectedCampaign={selectedCampaign}
+                approvedBuyers={overviewApprovedBuyersQuery.data}
+                approvedBuyersLoading={overviewApprovedBuyersQuery.isLoading}
+                onEditLinks={(campaign) =>
+                  setShowLinkModal({
+                    id: campaign.id,
+                    youtube: campaign.liveLinks?.youtube,
+                    facebook: campaign.liveLinks?.facebook,
+                  })
+                }
+                onSelectCampaign={persistCampaignSelection}
+                onSubmitReview={(campaignId) => submitMutation.mutate(campaignId)}
+              />
             ) : null}
 
             {activeTab === 'campaigns' ? (
-              <section className="grid gap-4">
-                {campaigns.map((campaign) => (
-                  <article
-                    key={campaign.id}
-                    className="rounded-[32px] border border-white/10 bg-white/5 p-5 shadow-2xl backdrop-blur-xl group hover:border-white/20 transition-all"
-                  >
-                    <div className="flex flex-col gap-6 lg:flex-row">
-                      <div className="h-32 w-full overflow-hidden rounded-[24px] bg-white/5 lg:w-48 border border-white/5">
-                        {campaign.imageUrl ? (
-                          <img
-                            src={campaign.imageUrl}
-                            alt={campaign.title}
-                            className="h-full w-full object-cover group-hover:scale-110 transition-all duration-500"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-white/10">
-                            <Ticket className="h-8 w-8" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <h2 className="text-2xl font-black tracking-tight text-white">
-                              {campaign.title}
-                            </h2>
-                            <p className="mt-1.5 text-xs text-white/40 font-bold uppercase tracking-wider">
-                              {campaign.ticketPrice} ETB · {campaign.totalTickets} tickets
-                            </p>
-                          </div>
-                          <span className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.16em] text-[#f6d365]">
-                            {campaign.status}
-                          </span>
-                        </div>
-
-                        <div className="mt-6 flex flex-wrap gap-3">
-                          <button
-                            onClick={() => setSelectedCampaignId(campaign.id)}
-                            className="rounded-2xl border border-white/10 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white hover:bg-white/5 transition-all"
-                          >
-                            Inspect
-                          </button>
-                          <button
-                            onClick={() =>
-                              setShowLinkModal({
-                                id: campaign.id,
-                                youtube: campaign.liveLinks?.youtube,
-                                facebook: campaign.liveLinks?.facebook,
-                              })
-                            }
-                            className="rounded-2xl border border-white/10 px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white hover:bg-white/5 transition-all"
-                          >
-                            Live links
-                          </button>
-                          {(campaign.status === CampaignStatus.DRAFT ||
-                            campaign.status === CampaignStatus.REJECTED) && (
-                            <button
-                              onClick={() => submitMutation.mutate(campaign.id)}
-                              className="rounded-2xl bg-[#f6d365] px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#0f172a] shadow-lg shadow-orange-500/10 active:scale-95 transition-all"
-                            >
-                              Submit review
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </section>
+              <CampaignsTab
+                campaigns={campaigns}
+                onSelectCampaign={persistCampaignSelection}
+                onEditLinks={(campaign) =>
+                  setShowLinkModal({
+                    id: campaign.id,
+                    youtube: campaign.liveLinks?.youtube,
+                    facebook: campaign.liveLinks?.facebook,
+                  })
+                }
+                onSubmitReview={(campaignId) => submitMutation.mutate(campaignId)}
+              />
             ) : null}
 
             {activeTab === 'sales' ? (
-              <section className="rounded-[32px] border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur-xl">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#f6d365]">
-                      Real-time activity
-                    </p>
-                    <h2 className="mt-2 text-2xl font-black tracking-tight text-white">
-                      Recent buyers and ticket flow
-                    </h2>
-                  </div>
-                  <div className="rounded-2xl bg-[#f6d365]/10 border border-[#f6d365]/20 px-4 py-3 text-xs font-black uppercase tracking-widest text-[#f6d365]">
-                    {buyersQuery.data?.total || 0} Connected
-                  </div>
-                </div>
-
-                <div className="mt-8 grid gap-3">
-                  {(buyersQuery.data?.items || []).map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid gap-4 rounded-[24px] border border-white/5 bg-white/5 px-5 py-5 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr] hover:bg-white/10 transition-all group"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 text-white/20 group-hover:text-[#f6d365] transition-colors">
-                          <Users className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-0.5">
-                            Buyer
-                          </p>
-                          <p className="font-bold text-white text-sm truncate">
-                            {item.buyer?.name || 'Anonymous buyer'}
-                          </p>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-0.5">
-                          Ticket #
-                        </p>
-                        <p className="font-black text-white text-sm">#{item.ticketNumber}</p>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-0.5">
-                          Status
-                        </p>
-                        <span className="inline-flex rounded-lg bg-white/5 px-2.5 py-1 text-[9px] font-black uppercase tracking-tighter text-[#f6d365] border border-white/5">
-                          {item.ticketStatus}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-0.5">
-                          Payment
-                        </p>
-                        <p className="font-bold text-white text-xs opacity-60">
-                          {item.payment?.status || 'NO_PAYMENT'}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {buyersQuery.data?.items.length === 0 ? (
-                  <div className="mt-8 rounded-[24px] bg-white/5 border border-dashed border-white/10 px-6 py-12 text-center">
-                    <p className="text-white/30 font-bold text-sm tracking-wide">
-                      Buyer activity appears here once reservations begin.
-                    </p>
-                  </div>
-                ) : null}
-              </section>
+              <SalesTab
+                selectedCampaign={selectedCampaign}
+                buyerScope={buyerScope}
+                setBuyerScope={setBuyerScope}
+                buyerSearchInput={buyerSearchInput}
+                setBuyerSearchInput={setBuyerSearchInput}
+                resetBuyerWorkspace={resetBuyerWorkspace}
+                buyers={buyersQuery.data}
+                isFetching={buyersQuery.isFetching}
+                emptyBuyerCaption={emptyBuyerCaption}
+                buyerPage={buyerPage}
+                buyerTotalPages={buyerTotalPages}
+                setBuyerPage={setBuyerPage}
+              />
             ) : null}
 
             {activeTab === 'exports' ? (
-              <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-                <div className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-xl">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#f6d365]">
-                    Operational Reports
-                  </p>
-                  <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
-                    {selectedCampaign?.title || 'Choose a campaign'}
-                  </h2>
-                  <p className="mt-4 text-sm leading-relaxed text-white/40 font-medium">
-                    Exports include complete buyer lists, payment audit trails, and winner certifications for the selected drop.
-                  </p>
-                  <div className="mt-10 grid gap-4 sm:grid-cols-2">
-                    <button
-                      onClick={() => handleDownload('xlsx')}
-                      disabled={!selectedCampaign}
-                      className="inline-flex items-center justify-center gap-3 rounded-[24px] bg-[#f6d365] px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-[#0f172a] shadow-xl shadow-orange-500/10 active:scale-95 disabled:opacity-30 disabled:scale-100 transition-all"
-                    >
-                      <Download className="h-4 w-4" />
-                      Export XLSX
-                    </button>
-                    <button
-                      onClick={() => handleDownload('pdf')}
-                      disabled={!selectedCampaign}
-                      className="inline-flex items-center justify-center gap-3 rounded-[24px] border border-white/10 bg-white/5 px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white hover:bg-white/10 active:scale-95 disabled:opacity-30 disabled:scale-100 transition-all"
-                    >
-                      <FileText className="h-4 w-4 text-[#f6d365]" />
-                      Export PDF
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-[32px] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-xl">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#f6d365]">
-                    Included insights
-                  </p>
-                  <div className="mt-8 space-y-4">
-                    {[
-                      'Complete sales performance overview',
-                      'Ticket reservation audit trail',
-                      'Verified buyer contact information',
-                      'Payment transaction verification',
-                      'Certified winner ranks and data',
-                    ].map((line) => (
-                      <div key={line} className="flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-[#f6d365]">
-                          <CheckCircle2 className="h-4 w-4" />
-                        </div>
-                        <p className="pt-2 text-sm text-white/50 font-medium leading-relaxed">{line}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
+              <ExportsTab
+                selectedCampaignId={selectedCampaignId}
+                selectedCampaign={selectedCampaign}
+                importFileRef={importFileRef}
+                isImporting={importPreviewMutation.isPending}
+                spreadsheetPreview={spreadsheetPreview}
+                onImportFile={(file) => importPreviewMutation.mutate(file)}
+                onMissingCampaign={() => setError('Select a raffle first.')}
+                onDownload={handleDownload}
+                onDownloadTemplate={downloadBuyerImportTemplateCsv}
+                onClearPreview={() => setSpreadsheetPreview(null)}
+              />
             ) : null}
           </div>
         )}

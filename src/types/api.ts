@@ -122,6 +122,21 @@ export interface CampaignBuyerListResponse {
   items: CampaignBuyerItem[];
 }
 
+export interface ImportPreviewRow {
+  buyerName: string | null;
+  buyerPhone: string | null;
+  ticketNumber: string | null;
+  ticketStatus: string | null;
+  paymentStatus: string | null;
+}
+
+export interface ImportPreviewResponse {
+  source: 'csv' | 'xlsx';
+  columns: string[];
+  rows: ImportPreviewRow[];
+  truncated: boolean;
+}
+
 export interface AdminUserListItem {
   id: string;
   phone: string;

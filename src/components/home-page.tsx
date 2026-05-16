@@ -10,10 +10,14 @@ import { Campaign } from '@/types/api';
 import { getErrorMessage } from '@/lib/errors';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
+import { LanguageToggle } from '@/components/language-toggle';
+import { getCampaignText, t } from '@/lib/i18n';
+import { useLanguageStore } from '@/stores/language-store';
 
 export function HomePage() {
   const user = useAuthStore((state) => state.user);
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
+  const language = useLanguageStore((state) => state.language);
   const queryClient = useQueryClient();
   
   const [showQuickBuyModal, setShowQuickBuyModal] = useState(false);
@@ -78,30 +82,32 @@ export function HomePage() {
 
   if (!hasHydrated || !user) {
     return (
-      <div className="bg-[#0f172a] min-h-screen flex items-center justify-center">
-        <div className="text-white/60">Loading...</div>
+      <div className="app-page min-h-screen flex items-center justify-center">
+        <div className="app-muted">{t(language, 'loading')}</div>
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="bg-[#0f172a] min-h-screen flex items-center justify-center">
-        <div className="text-white/60">Loading campaigns...</div>
+      <div className="app-page min-h-screen flex items-center justify-center">
+        <div className="app-muted">{t(language, 'loadingCampaigns')}</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-[#0f172a] min-h-screen flex items-center justify-center">
+      <div className="app-page min-h-screen flex items-center justify-center">
         <div className="max-w-xs w-full rounded-[32px] border border-rose-500/20 bg-rose-500/5 p-8 text-center space-y-6 backdrop-blur-xl">
           <div className="w-16 h-16 bg-rose-500/20 rounded-2xl flex items-center justify-center mx-auto">
             <Shield className="w-8 h-8 text-rose-400" />
           </div>
           <div className="space-y-2">
-            <h1 className="text-xl font-black text-white">Connection Error</h1>
-            <p className="text-xs text-white/50 leading-relaxed">
+            <h1 className="text-xl font-black text-[var(--foreground)]">
+              {t(language, 'connectionError')}
+            </h1>
+            <p className="text-xs app-muted leading-relaxed">
               {getErrorMessage(error, 'The server is currently unreachable. Please try again later.')}
             </p>
           </div>
@@ -110,7 +116,7 @@ export function HomePage() {
             className="flex items-center justify-center gap-2 rounded-2xl bg-white text-[#0f172a] px-6 py-4 text-xs font-black uppercase tracking-widest shadow-lg shadow-white/5 w-full"
           >
             <LogIn className="w-4 h-4" />
-            Sign In
+            {t(language, 'signIn')}
           </Link>
         </div>
       </div>
@@ -118,58 +124,65 @@ export function HomePage() {
   }
 
   return (
-    <div className="bg-[#0f172a] min-h-screen pb-32 text-white">
+    <div className="app-page min-h-screen pb-28 text-[var(--foreground)] transition-colors">
       {/* Background blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none opacity-50">
         <div className="absolute top-0 -left-[10%] w-[50%] h-[30%] bg-[#1e3a8a]/20 blur-[120px] rounded-full" />
         <div className="absolute bottom-[20%] -right-[10%] w-[40%] h-[40%] bg-[#f6d365]/10 blur-[100px] rounded-full" />
       </div>
 
-      <header className="sticky top-0 z-50 bg-[#0f172a]/80 backdrop-blur-xl px-6 py-5 flex items-center justify-between border-b border-white/5">
+      <header className="sticky top-0 z-50 bg-[var(--page-surface)]/85 backdrop-blur-xl px-5 py-4 flex items-center justify-between border-b border-[var(--card-border)]">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#f6d365]">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] app-accent">
             ETHIORaffle
           </p>
-          <h1 className="text-2xl font-black text-white tracking-tight">Explore</h1>
+          <h1 className="text-2xl font-black text-[var(--foreground)] tracking-tight">
+            {t(language, 'explore')}
+          </h1>
         </div>
-        {user ? (
-          <Link
-            href="/profile"
-            className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10 shadow-xl overflow-hidden group hover:border-[#f6d365]/50 transition-all"
-          >
-            {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-6 h-6 text-[#f6d365]" />
-            )}
-          </Link>
-        ) : (
-          <Link
-            href="/login"
-            className="px-6 py-3 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-orange-500/10 w-full"
-          >
-            Sign In
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          <LanguageToggle />
+          {user ? (
+            <Link
+              href="/profile"
+              className="w-11 h-11 rounded-2xl app-panel flex items-center justify-center border shadow-xl overflow-hidden group hover:border-[var(--accent)]/50 transition-all"
+            >
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-5 h-5 app-accent" />
+              )}
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="px-4 py-3 bg-gradient-to-r from-[#f6d365] to-[#fda085] text-[#0f172a] text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-orange-500/10"
+            >
+              {t(language, 'signIn')}
+            </Link>
+          )}
+        </div>
       </header>
 
-      <div className="pb-32 relative z-10">
+      <div className="pb-28 relative z-10">
         {campaigns.length === 0 ? (
           <div className="text-center py-40 px-6 space-y-8">
             <div className="w-24 h-24 bg-white/5 rounded-[40px] flex items-center justify-center mx-auto border border-white/10">
               <Ticket className="w-12 h-12 text-white/20" />
             </div>
             <div className="space-y-3">
-              <h3 className="text-2xl font-black text-white">No active drops</h3>
+              <h3 className="text-2xl font-black text-white">
+                {t(language, 'noActiveDrops')}
+              </h3>
               <p className="text-white/40 font-medium leading-relaxed max-w-[240px] mx-auto">
-                Stay tuned for the next premium raffle campaign.
+                {t(language, 'stayTuned')}
               </p>
             </div>
           </div>
         ) : (
-          <div className="px-4 pt-6 space-y-8">
+          <div className="px-4 pt-5 space-y-6">
             {campaigns.map((campaign) => (
-              <div key={campaign.id} className="space-y-4">
+              <div key={campaign.id} className="space-y-3">
                 {/* Creator Header */}
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-3">
@@ -185,14 +198,14 @@ export function HomePage() {
                       </div>
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-[#f6d365] uppercase tracking-widest mb-0.5">
-                        Verified Creator
+                      <p className="text-[10px] font-black app-accent uppercase tracking-widest mb-0.5">
+                        {t(language, 'verifiedCreator')}
                       </p>
-                      <h3 className="text-lg font-black text-white leading-none">
-                        {campaign.creator?.name || 'Premium Creator'}
+                      <h3 className="text-base font-black text-[var(--foreground)] leading-none">
+                        {campaign.creator?.name || t(language, 'premiumCreator')}
                       </h3>
-                      <p className="text-sm font-bold text-white/50 mt-1">
-                        {campaign.creator?.id ? `@creator_${campaign.creator.id.slice(-4)}` : 'Sponsored'}
+                      <p className="text-xs font-bold app-muted mt-1">
+                        {campaign.creator?.id ? `@creator_${campaign.creator.id.slice(-4)}` : t(language, 'sponsored')}
                       </p>
                     </div>
                   </div>
@@ -224,14 +237,14 @@ export function HomePage() {
                       <div className="space-y-4">
                         <div className="flex gap-2">
                           <span className="px-3 py-1.5 rounded-xl bg-white/10 backdrop-blur-md text-[9px] font-black text-[#f6d365] uppercase border border-white/10 tracking-[0.1em]">
-                            {campaign.totalTickets} Limited Tickets
+                            {campaign.totalTickets} {t(language, 'ticketsLeft')}
                           </span>
                           <span className="px-3 py-1.5 rounded-xl bg-[#f6d365] text-[9px] font-black text-[#0f172a] uppercase shadow-lg shadow-orange-500/20">
                             Live Draw
                           </span>
                         </div>
                         <h2 className="text-3xl font-black text-white leading-[1.1] pr-4">
-                          {campaign.title}
+                          {getCampaignText(campaign, language).title}
                         </h2>
                         
                         <div className="flex items-center justify-between pt-4 border-t border-white/10">
@@ -240,7 +253,9 @@ export function HomePage() {
                               <Ticket className="w-5 h-5 text-[#f6d365]" />
                             </div>
                             <div>
-                              <p className="text-[9px] font-black text-white/40 uppercase tracking-widest leading-none">Entry</p>
+                              <p className="text-[9px] font-black text-white/40 uppercase tracking-widest leading-none">
+                                {t(language, 'entry')}
+                              </p>
                               <p className="text-base font-black text-white mt-1">{campaign.ticketPrice} ETB</p>
                             </div>
                           </div>
@@ -256,7 +271,7 @@ export function HomePage() {
                             }}
                             className="bg-white text-[#0f172a] px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.15em] shadow-xl shadow-white/5 active:scale-95 transition-all"
                           >
-                            Buy Ticket
+                            {t(language, 'buyTicket')}
                           </button>
                         </div>
                       </div>
